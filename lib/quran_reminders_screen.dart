@@ -17,7 +17,7 @@ class _QuranRemindersScreenState extends State<QuranRemindersScreen> {
   final List<String> _wirdOptions = [
     'صفحة واحدة (ورد خفيف)',
     'ربع حزب (مناسب للتدبر)',
-    'حزب كامل (للجדיّن)',
+    'حزب كامل (للجديّن)',
     'جزء كامل (ختمة في شهر)',
   ];
 
@@ -93,7 +93,6 @@ class _QuranRemindersScreenState extends State<QuranRemindersScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // بطاقة تحفيزية علوية
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
@@ -119,8 +118,6 @@ class _QuranRemindersScreenState extends State<QuranRemindersScreen> {
               ),
             ),
             const SizedBox(height: 24),
-
-            // قسم إعدادات الورد اليومي
             const Text('📖 مقدار الورد اليومي المستهدف', style: TextStyle(color: Colors.tealAccent, fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             Container(
@@ -147,8 +144,6 @@ class _QuranRemindersScreenState extends State<QuranRemindersScreen> {
               ),
             ),
             const SizedBox(height: 24),
-
-            // قسم التنبيهات والأوقات
             const Text('🔔 إعدادات التنبيه والإشعارات', style: TextStyle(color: Colors.tealAccent, fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             Container(
@@ -163,7 +158,7 @@ class _QuranRemindersScreenState extends State<QuranRemindersScreen> {
                     title: const Text('تنبيه الورد اليومي', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                     subtitle: const Text('تذكير يومي في الوقت المحدد لقراءة وردك', style: TextStyle(color: Colors.white54, fontSize: 12)),
                     value: _dailyReminderEnabled,
-                    activeColor: Colors.tealAccent,
+                    activeThumbColor: Colors.tealAccent,
                     onChanged: (val) {
                       setState(() => _dailyReminderEnabled = val);
                       _saveReminderSettings();
@@ -184,7 +179,7 @@ class _QuranRemindersScreenState extends State<QuranRemindersScreen> {
                     title: const Text('تذكير سورة الكهف', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                     subtitle: const Text('تنبيه خاص كل يوم جمعة لقراءة سورة الكهف', style: TextStyle(color: Colors.white54, fontSize: 12)),
                     value: _fridayKahfReminder,
-                    activeColor: Colors.tealAccent,
+                    activeThumbColor: Colors.tealAccent,
                     onChanged: (val) {
                       setState(() => _fridayKahfReminder = val);
                       _saveReminderSettings();

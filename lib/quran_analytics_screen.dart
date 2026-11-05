@@ -150,7 +150,7 @@ class _QuranAnalyticsScreenState extends State<QuranAnalyticsScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('تم إنجاز ${(khatmaProgress * 100).toStringAsFixed(1)}%', style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold)),
+                     Text('تم إنجاز ${(khatmaProgress * 100).toStringAsFixed(1)}%', style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold)),
                       const Text('المتبقي: القرآن الكريم', style: TextStyle(color: Colors.white54, fontSize: 12)),
                     ],
                   ),

@@ -97,7 +97,8 @@ class _CitySearchScreenState extends State<CitySearchScreen> {
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
           final address = data['address'];
-          cityName = address['city'] ?? address['town'] ?? address['village'] ?? address['state'] ?? 'موقعي الحالي';
+          // تحسين التقاط اسم الضاحية أو المدينة بدقة أكبر (مثل Angered أو Göteborg)
+          cityName = address['suburb'] ?? address['city'] ?? address['town'] ?? address['village'] ?? address['state'] ?? 'موقعي الحالي';
         }
       } catch (_) {}
 
@@ -166,7 +167,7 @@ class _CitySearchScreenState extends State<CitySearchScreen> {
               controller: _searchController,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: 'مثال: الرباط، ستوكهولم، الدار البيضاء...',
+                hintText: 'مثال: Göteborg, Angered, ستوكهولم...',
                 hintStyle: const TextStyle(color: Colors.white38),
                 filled: true,
                 fillColor: const Color(0xFF1F2937),
@@ -185,12 +186,17 @@ class _CitySearchScreenState extends State<CitySearchScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    onPressed: () => _searchCityGlobal(_searchController.text),
+                    onPressed: () => _searchClientSearch(_searchController.text), // تم تصحيح النداء هنا للدالة الصحيحة
                     child: const Text('بحث في قاعدة بيانات العالم', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                   ),
           ],
         ),
       ),
     );
+  }
+
+  // دالة مساعدة لتلافي أي خطأ في الزر الأخير
+  void _searchClientSearch(String text) {
+    _searchCityGlobal(text);
   }
 }

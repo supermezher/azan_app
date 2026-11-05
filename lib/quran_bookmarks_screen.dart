@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'quran_screen.dart';
+import 'screens/surah_detail_screen.dart';
 
 class QuranBookmarksScreen extends StatefulWidget {
   const QuranBookmarksScreen({super.key});
