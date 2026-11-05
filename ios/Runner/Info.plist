@@ -66,5 +66,14 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+<string>يحتاج التطبيق معرفة موقعك الجغرافي لحساب أوقات الصلاة واتجاه القبلة بدقة.</string>
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+<string>يحتاج التطبيق معرفة موقعك الجغرافي لضبط التنبيهات في الخلفية.</string>
+<key>UIBackgroundModes</key>
+<array>
+    <string>fetch</string>
+    <string>remote-notification</string>
+</array>
 </dict>
 </plist>

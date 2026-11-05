@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:hijri/hijri_calendar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'package:adhan/adhan.dart';
 
 import 'fasting_tracker_screen.dart';
 import 'zakat_screen.dart';
@@ -30,11 +31,12 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   double? _qiblaDirection;
   
-  double _currentLat = 57.789; 
-  double _currentLng = 12.018;
+  double _currentLat = 21.3891; // مكة المكرمة افتراضياً
+  double _currentLng = 39.8579;
   
-  String _cityName = 'Angered, Göteborg';
+  String _cityName = 'مكة المكرمة';
   bool _isLoading = true;
+  String? _errorMessage;
   
   int _calculationMethod = 3;
   
@@ -88,10 +90,24 @@ class _HomeScreenState extends State<HomeScreen> {
       _asrAdjustment = prefs.getInt('asr_adj') ?? 0;
       _maghribAdjustment = prefs.getInt('maghrib_adj') ?? 0;
       _ishaAdjustment = prefs.getInt('isha_adj') ?? 0;
+
+      // استرجاع الموقع المحفوظ إن وُجد لضمان ثباته
+      if (prefs.containsKey('saved_lat') && prefs.containsKey('saved_lng')) {
+        _currentLat = prefs.getDouble('saved_lat')!;
+        _currentLng = prefs.getDouble('saved_lng')!;
+        _cityName = prefs.getString('saved_city_name') ?? 'موقعي المحفوظ';
+      }
     });
 
     _loadDates();
-    _checkLocationAndFetchTimes();
+
+    // إذا كان الموقع محفوظاً مسبقاً، نستخدمه مباشرة، وإلا نبحث عبر GPS
+    if (prefs.containsKey('saved_lat')) {
+      _calculateQiblaDirection();
+      await _fetchPrayerTimesFromApi(_currentLat, _currentLng);
+    } else {
+      await _checkLocationAndFetchTimes();
+    }
   }
 
   void _loadDates() {
@@ -181,11 +197,25 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // حساب اتجاه القبلة الحقيقي بناءً على الإحداثيات
+  void _calculateQiblaDirection() {
+    final coordinates = Coordinates(_currentLat, _currentLng);
+    setState(() {
+      _qiblaDirection = Qibla(coordinates).direction;
+    });
+  }
+
   Future<void> _checkLocationAndFetchTimes() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        _fetchPrayerTimesFromApi(_currentLat, _currentLng);
+        _calculateQiblaDirection();
+        await _fetchPrayerTimesFromApi(_currentLat, _currentLng);
         return;
       }
 
@@ -193,16 +223,35 @@ class _HomeScreenState extends State<HomeScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          _fetchPrayerTimesFromApi(_currentLat, _currentLng);
+          _calculateQiblaDirection();
+          await _fetchPrayerTimesFromApi(_currentLat, _currentLng);
           return;
         }
       }
 
-      setState(() => _cityName = 'جاري تحديد موقعك عبر GPS...');
+      if (permission == LocationPermission.deniedForever) {
+        _calculateQiblaDirection();
+        await _fetchPrayerTimesFromApi(_currentLat, _currentLng);
+        return;
+      }
 
-      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+      
       _currentLat = position.latitude;
       _currentLng = position.longitude;
+
+      // حفظ الموقع المكتشف تلقائياً عبر GPS
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('saved_lat', _currentLat);
+      await prefs.setDouble('saved_lng', _currentLng);
+      await prefs.setString('saved_city_name', _cityName);
+
+      _calculateQiblaDirection();
 
       try {
         final url = Uri.parse('https://nominatim.openstreetmap.org/reverse?format=json&lat=$_currentLat&lon=$_currentLng&accept-language=ar');
@@ -210,15 +259,23 @@ class _HomeScreenState extends State<HomeScreen> {
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
           final address = data['address'];
-          setState(() => _cityName = address['city'] ?? address['town'] ?? address['village'] ?? 'موقعي الحالي');
+          if (mounted) {
+            setState(() {
+              _cityName = address['city'] ?? address['town'] ?? address['village'] ?? 'موقعي الحالي';
+            });
+            await prefs.setString('saved_city_name', _cityName);
+          }
         }
       } catch (e) {
-        setState(() => _cityName = 'موقعي الحالي (GPS)');
+        if (mounted) {
+          setState(() => _cityName = 'موقعي الحالي (GPS)');
+        }
       }
 
-      _fetchPrayerTimesFromApi(_currentLat, _currentLng);
+      await _fetchPrayerTimesFromApi(_currentLat, _currentLng);
     } catch (e) {
-      _fetchPrayerTimesFromApi(_currentLat, _currentLng);
+      _calculateQiblaDirection();
+      await _fetchPrayerTimesFromApi(_currentLat, _currentLng);
     }
   }
 
@@ -227,7 +284,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final now = DateTime.now();
       final String dateStr = "${now.day}-${now.month}-${now.year}";
 
-      // جلب الأوقات بالاعتماد على طريقة الحساب الأساسية فقط
       final url = Uri.parse(
         'https://api.aladhan.com/v1/timings/$dateStr?latitude=$lat&longitude=$lng&method=$_calculationMethod'
       );
@@ -247,12 +303,71 @@ class _HomeScreenState extends State<HomeScreen> {
             _ishaTime = _parseTimeString(timings['Isha']).add(Duration(minutes: _ishaAdjustment));
             
             _isLoading = false;
+            _errorMessage = null;
           });
         }
         _startCountdown();
+      } else {
+        _calculatePrayerTimesLocally(lat, lng);
       }
     } catch (e) {
-      debugPrint("خطأ في الاتصال بالـ API: $e");
+      debugPrint("خطأ في الاتصال بالـ API، جاري التفعيل البديل المحلي: $e");
+      _calculatePrayerTimesLocally(lat, lng);
+    }
+  }
+
+  // دالة الحساب المحلي البديل المتوافقة مع الإصدار 2.0.0+ من حزمة adhan
+  void _calculatePrayerTimesLocally(double lat, double lng) {
+    try {
+      final coordinates = Coordinates(lat, lng);
+      final date = DateComponents.from(DateTime.now());
+      
+      CalculationParameters params;
+      switch (_calculationMethod) {
+        case 1:
+          params = CalculationMethod.karachi.getParameters();
+          break;
+        case 2:
+          params = CalculationMethod.north_america.getParameters();
+          break;
+        case 3:
+          params = CalculationMethod.muslim_world_league.getParameters();
+          break;
+        case 4:
+          params = CalculationMethod.umm_al_qura.getParameters();
+          break;
+        case 5:
+          params = CalculationMethod.egyptian.getParameters();
+          break;
+        default:
+          params = CalculationMethod.muslim_world_league.getParameters();
+          break;
+      }
+
+      final prayerTimes = PrayerTimes(coordinates, date, params);
+
+      if (mounted) {
+        setState(() {
+          _fajrTime = prayerTimes.fajr.add(Duration(minutes: _fajrAdjustment));
+          _sunriseTime = prayerTimes.sunrise;
+          _dhuhrTime = prayerTimes.dhuhr.add(Duration(minutes: _dhuhrAdjustment));
+          _asrTime = prayerTimes.asr.add(Duration(minutes: _asrAdjustment));
+          _maghribTime = prayerTimes.maghrib.add(Duration(minutes: _maghribAdjustment));
+          _ishaTime = prayerTimes.isha.add(Duration(minutes: _ishaAdjustment));
+          
+          _isLoading = false;
+          _errorMessage = null;
+        });
+      }
+      _startCountdown();
+    } catch (e) {
+      debugPrint("خطأ في الحساب المحلي: $e");
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'تعذر جلب أوقات الصلاة عبر الإنترنت أو الحساب المحلي.';
+        });
+      }
     }
   }
 
@@ -278,7 +393,15 @@ class _HomeScreenState extends State<HomeScreen> {
         _currentLat = result['lat'];
         _currentLng = result['lng'];
       });
-      _fetchPrayerTimesFromApi(_currentLat, _currentLng);
+
+      // حفظ الموقع الجديد فوراً في SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('saved_lat', _currentLat);
+      await prefs.setDouble('saved_lng', _currentLng);
+      await prefs.setString('saved_city_name', _cityName);
+
+      _calculateQiblaDirection();
+      await _fetchPrayerTimesFromApi(_currentLat, _currentLng);
     }
   }
 
@@ -333,44 +456,65 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.teal))
-          : ListView(
-              padding: const EdgeInsets.all(16.0),
-              children: [
-                _buildNextPrayerCard(),
-                const SizedBox(height: 16),
-                const Text('🌟 أقسام التطبيق الشاملة:', style: TextStyle(color: Colors.tealAccent, fontSize: 15, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10),
-                GridView.count(
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                  childAspectRatio: 1.2,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
+          : _errorMessage != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+                        const SizedBox(height: 16),
+                        Text(_errorMessage!, style: const TextStyle(color: Colors.white, fontSize: 16), textAlign: TextAlign.center),
+                        const SizedBox(height: 20),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+                          onPressed: _checkLocationAndFetchTimes,
+                          icon: const Icon(Icons.refresh, color: Colors.white),
+                          label: const Text('إعادة المحاولة', style: TextStyle(color: Colors.white)),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.all(16.0),
                   children: [
-                    _buildFeatureCard('القرآن', Icons.menu_book, const QuranListScreen()),
-                    _buildFeatureCard('القبلة', Icons.explore, QiblaScreen(qiblaDirection: _qiblaDirection ?? 0)),
-                    _buildFeatureCard('المساجد', Icons.mosque, MosquesScreen(lat: _currentLat, lng: _currentLng)),
-                    _buildFeatureCard('المسبحة', Icons.fingerprint, const TasbihScreen()),
-                    _buildFeatureCard('الأذكار', Icons.auto_stories, const AdhkarScreen()),
-                    _buildFeatureCard('حصن المسلم', Icons.menu_book_rounded, const HisnScreen()),
-                    _buildFeatureCard('حاسبة الزكاة', Icons.calculate, ZakatCalculatorScreen()),
-                    _buildFeatureCard('التقويم', Icons.calendar_month, const HijriCalendarScreen()),
-                    _buildFeatureCard('متتبع الصيام', Icons.event_available, FastingTrackerScreen()),
-                    _buildFeatureCard('المدينة والـ GPS', Icons.location_city, const CitySearchScreen(isInternalRoute: true)),
+                    _buildNextPrayerCard(),
+                    const SizedBox(height: 16),
+                    const Text('🌟 أقسام التطبيق الشاملة:', style: TextStyle(color: Colors.tealAccent, fontSize: 15, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                    GridView.count(
+                      crossAxisCount: 3,
+                      crossAxisSpacing: 10,
+                      mainAxisSpacing: 10,
+                      childAspectRatio: 1.2,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        _buildFeatureCard('القرآن', Icons.menu_book, const QuranListScreen()),
+                        _buildFeatureCard('القبلة', Icons.explore, QiblaScreen(qiblaDirection: _qiblaDirection ?? 0)),
+                        _buildFeatureCard('المساجد', Icons.mosque, MosquesScreen(lat: _currentLat, lng: _currentLng)),
+                        _buildFeatureCard('المسبحة', Icons.fingerprint, const TasbihScreen()),
+                        _buildFeatureCard('الأذكار', Icons.auto_stories, const AdhkarScreen()),
+                        _buildFeatureCard('حصن المسلم', Icons.menu_book_rounded, const HisnScreen()),
+                        _buildFeatureCard('حاسبة الزكاة', Icons.calculate, ZakatCalculatorScreen()),
+                        _buildFeatureCard('التقويم', Icons.calendar_month, const HijriCalendarScreen()),
+                        _buildFeatureCard('متتبع الصيام', Icons.event_available, FastingTrackerScreen()),
+                        _buildFeatureCard('المدينة والـ GPS', Icons.location_city, const CitySearchScreen(isInternalRoute: true)),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    const Text('🕌 أوقات الصلوات اليومية:', style: TextStyle(color: Colors.tealAccent, fontSize: 15, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                    _prayerTile('الفجر', _fajrTime),
+                    _prayerTile('الشروق', _sunriseTime),
+                    _prayerTile('الظهر', _dhuhrTime),
+                    _prayerTile('العصر', _asrTime),
+                    _prayerTile('المغرب', _maghribTime),
+                    _prayerTile('العشاء', _ishaTime),
                   ],
                 ),
-                const SizedBox(height: 20),
-                const Text('🕌 أوقات الصلوات اليومية:', style: TextStyle(color: Colors.tealAccent, fontSize: 15, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10),
-                _prayerTile('الفجر', _fajrTime),
-                _prayerTile('الشروق', _sunriseTime),
-                _prayerTile('الظهر', _dhuhrTime),
-                _prayerTile('العصر', _asrTime),
-                _prayerTile('المغرب', _maghribTime),
-                _prayerTile('العشاء', _ishaTime),
-              ],
-            ),
     );
   }
 
@@ -386,7 +530,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       },
       child: Container(
-        decoration: BoxDecoration(color: const Color(0xFF1F2937), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.teal.withValues(alpha: 0.4))),
+        decoration: BoxDecoration(color: const Color(0xFF1F2937), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.teal.withOpacity(0.4))),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
